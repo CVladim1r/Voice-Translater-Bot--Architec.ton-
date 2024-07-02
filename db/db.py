@@ -27,7 +27,6 @@ class MongoDB:
     def close(self):
         self.client.close()
 
-    # make context manager func
     def __enter__(self):
         return self
 

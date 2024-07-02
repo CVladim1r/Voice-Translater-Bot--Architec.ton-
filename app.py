@@ -1,6 +1,7 @@
 import asyncio
 import os
 import pathlib
+import logging  # Add logging module
 
 import ffmpeg
 
@@ -19,35 +20,40 @@ from db.utils import send_long_message
 from db.utils import get_translate
 from config import Config
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+logger = logging.getLogger(__name__)
+
+# Paths
 voice_dir = Config.dirs.get("voice") or "./voice"
 audio_dir = Config.dirs.get("audio") or "./audio"
 models_dir = Config.dirs.get("models") or "./models"
 video_dir = Config.dirs.get("video") or "./video"
 
-
 device = "cuda" if torch.cuda.is_available() else "cpu"
-print("Loading model...")
 
 model = whisper.load_model(Config.model, device=device, download_root=models_dir)
-print(
+logger.info(
     f"{'Multilingual ' if model.is_multilingual else 'English '}{Config.model} model loaded."
 )
 
 bot = Bot(token=Config.WHISPER_MIBOT_TOKEN)
-
 dp = Dispatcher()
-
-print("bot started")
 
 
 @dp.message(Command("start"))
 async def command_start(message: types.Message):
+    logger.info(f"Received /start command from chat id: {message.chat.id}")
     await message.answer(f"start command. Chat id: {message.chat.id}")
 
 
 @dp.message(Command("id"))
 @register_message
 async def command_id(message: types.Message):
+    logger.info(f"Received /id command from chat id: {message.chat.id}")
     await message.reply(
         f"chat id: {message.chat.id}\n" f"user_id: {message.from_user.id}"
     )
@@ -56,21 +62,15 @@ async def command_id(message: types.Message):
 @dp.message(Command("help"))
 @register_message
 async def help_command(message: types.Message):
+    logger.info(f"Received /help command from chat id: {message.chat.id}")
     await message.reply("Бот для получения текста из аудио")
-
-
-@dp.message(F.text)
-@register_message
-async def get_text(message: types.Message):
-    await message.reply(
-        f"Не понимаю: {message.text}\n" f"Наберите команду `\\help` для справки"
-    )
 
 
 @dp.message(F.voice)
 @dp.message(F.audio)
 @register_message
 async def get_audio(message: types.Message):
+    logger.info(f"Received audio message from chat id: {message.chat.id}")
     voice_object = message.voice or message.audio
     pathlib.Path(audio_dir).mkdir(parents=True, exist_ok=True)
     filename = os.path.join(audio_dir, f"{voice_object.file_unique_id}")
@@ -81,7 +81,9 @@ async def get_audio(message: types.Message):
             voice_object,
             destination=filename,
         )
+        logger.info(f"Downloaded audio file to: {filename}")
     except Exception as E:
+        logger.error(f"Error downloading file: {E}")
         await message.reply(f"Error: Cannot download file.\n{E}")
         raise E
     finally:
@@ -91,6 +93,7 @@ async def get_audio(message: types.Message):
     try:
         text = get_translate(model, filename)
     except Exception as E:
+        logger.error(f"Error processing audio to text: {E}")
         await message.reply("Error: Cannot extract text.")
         raise E
     finally:
@@ -103,6 +106,7 @@ async def get_audio(message: types.Message):
 @dp.message(F.document)
 @register_message
 async def get_video_like(message: types.Message):
+    logger.info(f"Received video/document message from chat id: {message.chat.id}")
     pathlib.Path(video_dir).mkdir(parents=True, exist_ok=True)
     object = message.video or message.video_note or message.document
 
@@ -117,7 +121,9 @@ async def get_video_like(message: types.Message):
             object,
             destination=filename,
         )
+        logger.info(f"Downloaded video/document file to: {filename}")
     except Exception as E:
+        logger.error(f"Error downloading file: {E}")
         await message.reply(f"Error: Cannot download file.\n{E}")
         raise E
     finally:
@@ -132,7 +138,9 @@ async def get_video_like(message: types.Message):
         )
         try:
             video_decoding(filename, output_filename)
+            logger.info(f"Extracted audio to: {output_filename}")
         except Exception as E:
+            logger.error(f"Error extracting audio: {E}")
             await message.reply(f"Error: Cannot extract audio.\n{E}")
             raise E
         finally:
@@ -142,6 +150,7 @@ async def get_video_like(message: types.Message):
     try:
         text = get_translate(model, output_filename)
     except Exception as E:
+        logger.error(f"Error processing audio to text: {E}")
         await message.reply("Error: Cannot extract text.")
         raise E
     finally:
